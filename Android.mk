@@ -24,7 +24,7 @@ include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
-LOCAL_MODULE := gralloc.default
+LOCAL_MODULE := gralloc.$(TARGET_BOARD_PLATFORM)
 #LOCAL_MODULE_TAGS := optional
 
 LOCAL_SHARED_LIBRARIES := libdrm libhardware liblog libcutils
