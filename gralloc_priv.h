@@ -30,9 +30,7 @@
 #include <cutils/native_handle.h>
 #include <alloc_device.h>
 #include <utils/Log.h>
-
-/* use by MALI EGL */
-#define GRALLOC_ARM_DMA_BUF_MODULE 1
+#include <ion/ion.h>
 
 /* the max string size of GRALLOC_HARDWARE_GPU0 & GRALLOC_HARDWARE_FB0
  * 8 is big enough for "gpu0" & "fb0" currently
@@ -62,7 +60,6 @@ struct private_module_t
 	pthread_mutex_t lock;
 	buffer_handle_t currentBuffer;
 	int ion_client;
-	int drm_fd;
 
 	struct fb_var_screeninfo info;
 	struct fb_fix_screeninfo finfo;
@@ -91,9 +88,6 @@ struct private_handle_t
 
 	enum
 	{
-		/* keep those emun even we don't use them to let MAli
-		 * compile
-		 * PRIV_FLAGS_USES_ION is used for any type of dmabuf buffer */
 		PRIV_FLAGS_FRAMEBUFFER = 0x00000001,
 		PRIV_FLAGS_USES_UMP    = 0x00000002,
 		PRIV_FLAGS_USES_ION    = 0x00000004,
@@ -119,7 +113,7 @@ struct private_handle_t
 	int     height;
 	int     format;
 	int     stride;
-	void    *base;
+	int     base;
 	int     lockState;
 	int     writeOwner;
 	int     pid;
@@ -129,16 +123,25 @@ struct private_handle_t
 	// Following members is for framebuffer only
 	int     fd;
 	int     offset;
+    int     plane_id;
 
-	unsigned int drm_hnd;
-	int	plane_id;
+	ion_user_handle_t ion_hnd;
+#define GRALLOC_ARM_DMA_BUF_NUM_INTS 2
+
+#define GRALLOC_ARM_NUM_FDS 1
 
 #ifdef __cplusplus
-	static const int sNumInts = 17;
-	static const int sNumFds = 1;
+	/*
+	 * We track the number of integers in the structure. There are 11 unconditional
+	 * integers (magic - pid, yuv_info, fd and offset). The GRALLOC_ARM_XXX_NUM_INTS
+	 * variables are used to track the number of integers that are conditionally
+	 * included.
+	 */
+	static const int sNumInts = 15 + GRALLOC_ARM_DMA_BUF_NUM_INTS;
+	static const int sNumFds = GRALLOC_ARM_NUM_FDS;
 	static const int sMagic = 0x3141592;
 
-	private_handle_t(int flags, int usage, int size, void *base, int lock_state):
+	private_handle_t(int flags, int usage, int size, int base, int lock_state):
 		share_fd(-1),
 		magic(sMagic),
 		flags(flags),
@@ -155,15 +158,15 @@ struct private_handle_t
 		yuv_info(MALI_YUV_NO_INFO),
 		fd(0),
 		offset(0),
-		drm_hnd(0),
-		plane_id(0)
+		ion_hnd(NULL)
+
 	{
 		version = sizeof(native_handle);
 		numFds = sNumFds;
 		numInts = sNumInts;
 	}
 
-	private_handle_t(int flags, int usage, int size, void *base, int lock_state, int fb_file, int fb_offset):
+	private_handle_t(int flags, int usage, int size, int base, int lock_state, int fb_file, int fb_offset):
 		share_fd(-1),
 		magic(sMagic),
 		flags(flags),
@@ -180,8 +183,7 @@ struct private_handle_t
 		yuv_info(MALI_YUV_NO_INFO),
 		fd(fb_file),
 		offset(fb_offset),
-		drm_hnd(0),
-		plane_id(0)
+		ion_hnd(NULL)
 	{
 		version = sizeof(native_handle);
 		numFds = sNumFds;
